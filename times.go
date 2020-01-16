@@ -1,11 +1,7 @@
 package goTtrack
 
 import (
-	"fmt"
-	"log"
 	"runtime"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -18,25 +14,8 @@ const (
 
 //Collector Variables
 var iPCchannel chan channelStruct
-var stats map[string]FuncStats
-var isInit bool
-
-/*FuncStats holds all currently available stats of the function*/
-type FuncStats struct {
-	Name string //Name of the function
-	Line int    //Line that returned from the tracked function
-
-	Durations []time.Duration //Execution times
-
-	TimePoints map[int]CTimer
-
-	Count  int //Count how many times the function was called and returned
-	isInit bool
-
-	Average time.Duration //Average Execution time
-	Min     time.Duration //Minimal Execution time
-	Max     time.Duration //Maximal Execution time
-}
+var stats map[string]*FuncStats
+var cid int
 
 type channelStruct struct {
 	T       time.Time
@@ -45,55 +24,71 @@ type channelStruct struct {
 	WatchID int
 }
 
+//Start routine to recieve times and put them into the struct that holds all times
+func init() {
+	go collector()
+}
+
 //=============================================================================
-// Struct Functions
+// Exported Functions
 
-func (f *FuncStats) initFuncStats() {
-	if f.isInit == false {
-		f.Durations = make([]time.Duration, 0)
-		f.TimePoints = make(map[int]CTimer)
-		f.isInit = true
+/*
+Measure time from start to end
+
+Usage: defer Observer.TimeTrack(time.Now())
+*/
+func TimeTrack(start time.Time) {
+
+	// Skip this function, and fetch the PC and file for its parent.
+	pc, _, _, _ := runtime.Caller(1)
+
+	//Let the Collector routine handle the rest
+	iPCchannel <- channelStruct{
+		T:  start,
+		PC: pc,
 	}
 }
 
-/*Calculates the Execution times of a given Function (Average, Min, Max)*/
-func (f *FuncStats) calcStats() {
+//Track starts a tracker that is also able to add specific TimePoints
+func Track(start time.Time) int {
+	// Skip this function, and fetch the PC and file for its parent.
+	pc, _, _, _ := runtime.Caller(1)
 
-	var all time.Duration
+	id := cid
+	cid++
 
-	f.Count = len(f.Durations)
-
-	if f.Count == 0 {
-		return
+	//Let the Collector routine handle the rest
+	iPCchannel <- channelStruct{
+		T:       start,
+		PC:      pc,
+		Type:    isStartWatch,
+		WatchID: id,
 	}
 
-	for i, d := range f.Durations {
-		all += d
-		if i == 0 {
-			f.Min = d
-		}
-		if d > f.Max {
-			f.Max = d
-		} else {
-			if d < f.Min {
-				f.Min = d
-			}
-		}
-	}
-
-	f.Average = time.Duration(int64(all) / int64(f.Count))
+	return id
 }
 
-func calcAll() {
-	for k := range stats {
-		tmp := stats[k]
-		tmp.calcStats()
+//TimePoint adds a time point to the given id
+//the user is responsible for the corretnes of the id
+func TimePoint(time time.Time, id int) {
+	// Skip this function, and fetch the PC and file for its parent.
+	pc, _, _, _ := runtime.Caller(1)
+
+	//Let the Collector routine handle the rest
+	iPCchannel <- channelStruct{
+		T:       time,
+		PC:      pc,
+		Type:    isTimePoint,
+		WatchID: id,
 	}
 }
+
+//=============================================================================
+//Unexported functions
 
 /*The Collector observes the iPCchannel and puts all recieved data into the struct*/
 func collector() {
-	stats = make(map[string]FuncStats)
+	stats = make(map[string]*FuncStats)
 
 	iPCchannel = make(chan channelStruct, 100)
 
@@ -117,109 +112,6 @@ func collector() {
 	}
 }
 
-//=============================================================================
-// Exported Functions
-// StartCollector needs to be started at first
-
-/*StartCollector starts the collector routine. */
-func Start() {
-	if isInit {
-		log.Println("Collector already running!")
-		return
-	}
-	go collector()
-	isInit = true
-}
-
-/*
-Measure time from start to end
-
-Usage: defer Observer.TimeTrack(time.Now())
-*/
-func TimeTrack(start time.Time) {
-
-	// Skip this function, and fetch the PC and file for its parent.
-	pc, _, _, _ := runtime.Caller(1)
-
-	//Let the Collector routine handle the rest
-	iPCchannel <- channelStruct{
-		T:  start,
-		PC: pc,
-	}
-}
-
-func StartWatch(start time.Time, id int) {
-	// Skip this function, and fetch the PC and file for its parent.
-	pc, _, _, _ := runtime.Caller(1)
-
-	//Let the Collector routine handle the rest
-	iPCchannel <- channelStruct{
-		T:       start,
-		PC:      pc,
-		Type:    isStartWatch,
-		WatchID: id,
-	}
-}
-
-//TimePoint adds a time point to the
-func TimePoint(start time.Time, id int) {
-	// Skip this function, and fetch the PC and file for its parent.
-	pc, _, _, _ := runtime.Caller(1)
-
-	//Let the Collector routine handle the rest
-	iPCchannel <- channelStruct{
-		T:       start,
-		PC:      pc,
-		Type:    isTimePoint,
-		WatchID: id,
-	}
-}
-
-/*GetFuncStats gets a specific Statistic entry */
-func GetFuncStats(name string) FuncStats {
-	tmp := stats[name]
-	if tmp.isInit {
-		tmp.calcStats()
-	}
-	return tmp
-}
-
-/*GetStats gets all current Statistic entrys */
-func GetStats() map[string]FuncStats {
-	calcAll()
-	return stats
-}
-
-func GetStatsPrint() (ret string) {
-	ret += fmt.Sprintln("====== Results =====")
-	for _, v := range stats {
-		ret += fmt.Sprintln(v.Name+":"+strconv.Itoa(v.Line), v.Count, "Avg:", v.Average, "Min:", v.Min, "Max:", v.Max)
-		ret += fmt.Sprintln("Durations:", v.Durations)
-		var keys []int
-		for k := range v.TimePoints {
-			keys = append(keys, k)
-		}
-		sort.Ints(keys)
-		ret += fmt.Sprintln("Timepoints:")
-		for _, l := range keys {
-			ret += fmt.Sprintln("ID", l, ":", v.TimePoints[l].Durations)
-		}
-		ret += fmt.Sprintln()
-	}
-	return ret
-}
-
-//PrintAllStats waits until the buffer of the ipc channel is empty
-func GetAllStatsPrint() (ret string) {
-	for len(iPCchannel) != 0 {
-	}
-	calcAll()
-	return GetStatsPrint()
-}
-
-//=============================================================================
-// Helper Functions
-
 func getFuncNameAndLine(pc uintptr) (string, int) {
 
 	// Retrieve a function object this functions parent.
@@ -241,10 +133,8 @@ func addTime(param *channelStruct) {
 	elapsed := time.Since(param.T)
 
 	entry := stats[name]
-	if !entry.isInit { //entry.Name should always be set when entry is valid
-		entry.initFuncStats()
-		entry.Line = line
-		entry.Name = name
+	if entry == nil { //entry.Name should always be set when entry is valid
+		entry = newFuncStats(name, line)
 	} else {
 		entry.Line = line
 	}
@@ -256,13 +146,12 @@ func startWatch(param *channelStruct) {
 	name, line := getFuncNameAndLine(param.PC)
 
 	entry := stats[name]
-	if !entry.isInit { //entry.Name should always be set when entry is valid
-		entry.initFuncStats()
-		entry.Line = line
-		entry.Name = name
+	if entry == nil { //entry.Name should always be set when entry is valid
+		entry = newFuncStats(name, line)
 	}
 
-	entry.TimePoints[param.WatchID] = StartCTimer(line, param.T)
+	t := newCTimer(line, param.T)
+	entry.TimePoints[param.WatchID] = &t
 
 	stats[name] = entry
 }
@@ -272,13 +161,11 @@ func addTimePoint(param *channelStruct) {
 	name, line := getFuncNameAndLine(param.PC)
 
 	entry := stats[name]
-
-	if !entry.isInit {
+	if entry == nil {
 		panic("Uninitialized function entry")
 	}
 
 	watch := entry.TimePoints[param.WatchID]
-
 	if watch.IsEmpty() {
 		panic("Uninitialized Stopwatch")
 	}
@@ -286,4 +173,10 @@ func addTimePoint(param *channelStruct) {
 	entry.TimePoints[param.WatchID].Durations[line] = watch.Round(line, param.T)
 
 	stats[name] = entry
+}
+
+func calcAll() {
+	for k := range stats {
+		stats[k].calcStats()
+	}
 }
