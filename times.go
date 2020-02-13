@@ -33,9 +33,8 @@ func init() {
 // Exported Functions
 
 /*
-Measure time from start to end
-
-Usage: defer Observer.TimeTrack(time.Now())
+Measure time from start to end with
+defer goTtrack.TimeTrack(time.Now())
 */
 func TimeTrack(start time.Time) {
 
@@ -69,7 +68,6 @@ func Track(start time.Time) int {
 }
 
 //TimePoint adds a time point to the given id
-//the user is responsible for the corretnes of the id
 func TimePoint(time time.Time, id int) {
 	// Skip this function, and fetch the PC and file for its parent.
 	pc, _, _, _ := runtime.Caller(1)
@@ -86,8 +84,10 @@ func TimePoint(time time.Time, id int) {
 //=============================================================================
 //Unexported functions
 
-/*The Collector observes the iPCchannel and puts all recieved data into the struct*/
+//The Collector observes the iPCchannel
+//and puts all recieved data into the struct
 func collector() {
+
 	stats = make(map[string]*FuncStats)
 
 	iPCchannel = make(chan channelStruct, 100)
