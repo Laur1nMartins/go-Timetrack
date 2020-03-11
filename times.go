@@ -1,6 +1,7 @@
 package goTtrack
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 	"time"
@@ -22,10 +23,16 @@ type channelStruct struct {
 	PC      uintptr
 	Type    int
 	WatchID int
+	Msg     string
 }
 
 //Start routine to recieve times and put them into the struct that holds all times
 func init() {
+	stats = make(map[string]*FuncStats)
+
+	iPCchannel = make(chan channelStruct, 100)
+
+	//this must be a "go" call!!!
 	go collector()
 }
 
@@ -68,7 +75,8 @@ func Track(start time.Time) int {
 }
 
 //TimePoint adds a time point to the given id
-func TimePoint(time time.Time, id int) {
+//msg is a description of the timePoint
+func TimePoint(time time.Time, id int, msg string) {
 	// Skip this function, and fetch the PC and file for its parent.
 	pc, _, _, _ := runtime.Caller(1)
 
@@ -78,6 +86,7 @@ func TimePoint(time time.Time, id int) {
 		PC:      pc,
 		Type:    isTimePoint,
 		WatchID: id,
+		Msg:     msg,
 	}
 }
 
@@ -87,14 +96,11 @@ func TimePoint(time time.Time, id int) {
 //The Collector observes the iPCchannel
 //and puts all recieved data into the struct
 func collector() {
-
-	stats = make(map[string]*FuncStats)
-
-	iPCchannel = make(chan channelStruct, 100)
-
+	fmt.Println("Collector running")
 	for {
 		val, ok := <-iPCchannel
 		if ok {
+			fmt.Println("Recieving times")
 			switch val.Type {
 			case isNormal:
 				addTime(&val)
@@ -169,6 +175,8 @@ func addTimePoint(param *channelStruct) {
 	if watch.IsEmpty() {
 		panic("Uninitialized Stopwatch")
 	}
+
+	watch.Name = param.Msg
 
 	entry.TimePoints[param.WatchID].Durations[line] = watch.Round(line, param.T)
 

@@ -21,6 +21,7 @@ type FuncStats struct {
 type CTimer struct {
 	StartT    time.Time
 	StartLine int
+	Name      string
 	Durations map[int][]time.Duration //int == line
 	Stats     map[int]meta
 }

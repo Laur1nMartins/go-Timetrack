@@ -48,7 +48,7 @@ func GetStatsPrint(printRaw bool) (ret string) {
 
 			ret += fmt.Sprintln("Timepoints:")
 			for _, l := range keys {
-				ret += fmt.Sprintln("ID", l, ":", v.TimePoints[l].Durations)
+				ret += fmt.Sprintln("ID", v.TimePoints[l].Name, ":", v.TimePoints[l].Durations)
 				ret += fmt.Sprintln("ID", l, ":", v.TimePoints[l].Stats)
 			}
 		}
